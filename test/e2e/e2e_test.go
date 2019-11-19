@@ -31,11 +31,15 @@ func TestE2EFlow(t *testing.T) {
 	extrajohnName := "extrajohn"
 	_, expExtraUaSpec := setup(t, ctx, awaitility, extrajohnName)
 
-	verifyResources(t, awaitility, johnsmithName,
+	// Expected ns template revisions
+	revisions, err := getRevisions(awaitility)
+	require.NoError(t, err)
+
+	verifyResources(t, awaitility, johnsmithName, revisions,
 		wait.UntilMasterUserRecordHasConditions(provisioned()),
 		wait.UntilUserAccountHasSpec(*expUaSpec),
 		wait.UntilUserAccountHasConditions(provisioned()))
-	verifyResources(t, awaitility, extrajohnName,
+	verifyResources(t, awaitility, extrajohnName, revisions,
 		wait.UntilMasterUserRecordHasConditions(provisioned()),
 		wait.UntilUserAccountHasSpec(*expExtraUaSpec),
 		wait.UntilUserAccountHasConditions(provisioned()))
@@ -53,10 +57,10 @@ func TestE2EFlow(t *testing.T) {
 
 			// then
 			require.NoError(t, err)
-			verifyResources(t, awaitility, johnsmithName,
+			verifyResources(t, awaitility, johnsmithName, revisions,
 				wait.UntilMasterUserRecordHasConditions(provisioned()),
 				wait.UntilUserAccountHasConditions(provisioned()))
-			verifyResources(t, awaitility, extrajohnName,
+			verifyResources(t, awaitility, extrajohnName, revisions,
 				wait.UntilMasterUserRecordHasConditions(provisioned()),
 				wait.UntilUserAccountHasConditions(provisioned()))
 		})
@@ -72,10 +76,10 @@ func TestE2EFlow(t *testing.T) {
 
 			// then
 			require.NoError(t, err)
-			verifyResources(t, awaitility, johnsmithName,
+			verifyResources(t, awaitility, johnsmithName, revisions,
 				wait.UntilMasterUserRecordHasConditions(provisioned()),
 				wait.UntilUserAccountHasConditions(provisioned()))
-			verifyResources(t, awaitility, extrajohnName,
+			verifyResources(t, awaitility, extrajohnName, revisions,
 				wait.UntilMasterUserRecordHasConditions(provisioned()),
 				wait.UntilUserAccountHasConditions(provisioned()))
 		})
@@ -92,10 +96,10 @@ func TestE2EFlow(t *testing.T) {
 
 			// then
 			require.NoError(t, err)
-			verifyResources(t, awaitility, johnsmithName,
+			verifyResources(t, awaitility, johnsmithName, revisions,
 				wait.UntilMasterUserRecordHasConditions(provisioned()),
 				wait.UntilUserAccountHasConditions(provisioned()))
-			verifyResources(t, awaitility, extrajohnName,
+			verifyResources(t, awaitility, extrajohnName, revisions,
 				wait.UntilMasterUserRecordHasConditions(provisioned()),
 				wait.UntilUserAccountHasConditions(provisioned()))
 		})
@@ -112,10 +116,10 @@ func TestE2EFlow(t *testing.T) {
 
 			// then
 			require.NoError(t, err)
-			verifyResources(t, awaitility, johnsmithName,
+			verifyResources(t, awaitility, johnsmithName, revisions,
 				wait.UntilMasterUserRecordHasConditions(provisioned()),
 				wait.UntilUserAccountHasConditions(provisioned()))
-			verifyResources(t, awaitility, extrajohnName,
+			verifyResources(t, awaitility, extrajohnName, revisions,
 				wait.UntilMasterUserRecordHasConditions(provisioned()),
 				wait.UntilUserAccountHasConditions(provisioned()))
 		})
@@ -162,7 +166,7 @@ func TestE2EFlow(t *testing.T) {
 		// also, verify that other user's resource are left intact
 		_, err = hostAwait.WaitForMasterUserRecord(extrajohnName)
 		require.NoError(t, err)
-		verifyResources(t, awaitility, extrajohnName, wait.UntilMasterUserRecordHasConditions(provisioned()))
+		verifyResources(t, awaitility, extrajohnName, revisions, wait.UntilMasterUserRecordHasConditions(provisioned()))
 	})
 }
 
@@ -244,24 +248,27 @@ func TestE2EFlowForMultipleAccounts(t *testing.T) {
 	murList := &toolchainv1alpha1.MasterUserRecordList{}
 	ctx, awaitility := testsupport.WaitForDeployments(t, murList)
 	defer ctx.Cleanup()
+	// Expected ns template revisions
+	revisions, err := getRevisions(awaitility)
+	require.NoError(t, err)
 
 	// when
 	var murs []*toolchainv1alpha1.MasterUserRecord
-	for i := 0; i < 10; i++ {
-		mur := createMasterUserRecord(t, awaitility, ctx, fmt.Sprintf("johny-number-%d", i))
+	for i := 0; i < 3; i++ {
+		mur := createMasterUserRecord(t, awaitility, ctx, fmt.Sprintf("johny-number-%d", i), revisions)
 		t.Logf("MasterUserRecord '%s' created", mur.Name)
 		murs = append(murs, mur)
 	}
 
 	// then
 	for _, mur := range murs {
-		verifyResources(t, awaitility, mur.Name,
+		verifyResources(t, awaitility, mur.Name, revisions,
 			wait.UntilMasterUserRecordHasConditions(provisioned()),
 			wait.UntilUserAccountHasConditions(provisioned()))
 	}
 }
 
-func verifyResources(t *testing.T, awaitility *wait.Awaitility, murName string, mixedCriteria ...interface{}) {
+func verifyResources(t *testing.T, awaitility *wait.Awaitility, murName string, expectedRevisions map[string]string, mixedCriteria ...interface{}) {
 	masteruserrecordCriteria := []wait.MasterUserRecordWaitCriterion{}
 	useraccountCriteria := []wait.UserAccountWaitCriterion{}
 	for _, c := range mixedCriteria {
@@ -303,19 +310,31 @@ func verifyResources(t *testing.T, awaitility *wait.Awaitility, murName string, 
 
 	_, err = memberAwait.WaitForNSTmplSet(userAccount.Name)
 	assert.NoError(t, err)
+
+	for key, revsion := range expectedRevisions {
+		_, err = memberAwait.WaitForNamespace(userAccount.Name, key, revsion)
+		assert.NoError(t, err)
+	}
 }
 
-func createMasterUserRecord(t *testing.T, awaitility *wait.Awaitility, ctx *framework.TestCtx, name string) *toolchainv1alpha1.MasterUserRecord {
+func createMasterUserRecord(t *testing.T, awaitility *wait.Awaitility, ctx *framework.TestCtx, name string, expectedRevisions map[string]string) *toolchainv1alpha1.MasterUserRecord {
 	memberCluster, ok, err := awaitility.Host().GetKubeFedCluster(cluster.Member, wait.ReadyKubeFedCluster)
 	require.NoError(t, err)
 	require.True(t, ok, "KubeFedCluster should exist")
 	mur := murtest.NewMasterUserRecord(name,
-		murtest.MetaNamespace(awaitility.HostNs), murtest.TargetCluster(memberCluster.Name))
+		murtest.MetaNamespace(awaitility.HostNs),
+		murtest.TargetCluster(memberCluster.Name),
+	)
+	murtest.ModifyUaInMur(mur, memberCluster.Name,
+		murtest.Namespace("dev", expectedRevisions["dev"]),
+		murtest.Namespace("code", expectedRevisions["code"]),
+		murtest.Namespace("stage", expectedRevisions["stage"]),
+	)
 
 	err = awaitility.Client.Create(context.TODO(), mur, testsupport.CleanupOptions(ctx))
 	require.NoError(t, err)
 
-	verifyResources(t, awaitility, mur.Name,
+	verifyResources(t, awaitility, mur.Name, expectedRevisions,
 		wait.UntilMasterUserRecordHasConditions(provisioned()),
 		wait.UntilUserAccountHasConditions(provisioned()))
 	return mur

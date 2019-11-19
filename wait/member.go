@@ -149,7 +149,13 @@ func (a *MemberAwaitility) WaitForNamespace(username, typeName, revision string)
 		}
 
 		if len(namespaceList.Items) < 1 {
-			a.T.Logf("waiting for availability of namespace of type '%s' with revision '%s' and owned by '%s", typeName, revision, username)
+			allNSs := &v1.NamespaceList{}
+			ls := map[string]string{"provider": "codeready-toolchain"}
+			if err := a.Client.List(context.TODO(), allNSs, client.MatchingLabels(ls)); err != nil {
+				return false, err
+			}
+
+			a.T.Logf("waiting for availability of namespace of type '%s' with revision '%s' and owned by '%s. Currently available NSs: '%v'", typeName, revision, username, allNSs)
 			return false, nil
 		}
 		require.Len(a.T, namespaceList.Items, 1, "there should be only one Namespace found")
