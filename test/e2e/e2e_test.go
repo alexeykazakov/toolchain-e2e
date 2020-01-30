@@ -114,6 +114,39 @@ func TestE2EFlow(t *testing.T) {
 		})
 	})
 
+	t.Run("mur status is restored to ready after brief member cluster unavailability", func(t *testing.T) {
+		// make the member cluster unavailable
+		mur, err := awaitility.Host().WaitForMasterUserRecord(johnSignup.Spec.Username)
+		require.NoError(t, err)
+		targetCluster := mur.Spec.UserAccounts[0].TargetCluster
+		memberCluster, err := awaitility.Host().WaitForKubeFedClusterConditionWithName(targetCluster, wait.ReadyKubeFedCluster)
+		require.NoError(t, err)
+		originalAPIEndpoint := memberCluster.Spec.APIEndpoint
+		memberCluster.Spec.APIEndpoint = memberCluster.Spec.APIEndpoint + "1" // APIEndpoint is incorrect now
+		defer func() {
+			// Restore the member cluster and wait for it to get ready
+			memberCluster, err := awaitility.Host().WaitForKubeFedClusterConditionWithName(targetCluster, nil)
+			require.NoError(t, err)
+			memberCluster.Spec.APIEndpoint = originalAPIEndpoint
+			err = awaitility.Host().Client.Update(context.TODO(), memberCluster)
+			require.NoError(t, err)
+			_, err = awaitility.Host().WaitForKubeFedClusterConditionWithName(targetCluster, wait.ReadyKubeFedCluster)
+			require.NoError(t, err)
+
+			// the MUR and other resource statuses should be restored to Ready
+			verifyResourcesProvisionedForSignup(t, awaitility, johnSignup, revisions)
+		}()
+		err = awaitility.Host().Client.Update(context.TODO(), memberCluster)
+		require.NoError(t, err)
+		_, err = awaitility.Host().WaitForKubeFedClusterConditionWithName(targetCluster, wait.NotReadyKubeFedCluster)
+		require.NoError(t, err)
+
+		// the MUR status should be NotReady
+		_, err = awaitility.Host().WaitForMasterUserRecord(mur.Name,
+			wait.UntilMasterUserRecordHasConditions(targetClusterNotReady(fmt.Sprintf("the member cluster %s is not ready", targetCluster))))
+		assert.NoError(t, err)
+	})
+
 	t.Run("delete UserSignup and expect all resources to be deleted", func(t *testing.T) {
 		// given
 		hostAwait := wait.NewHostAwaitility(awaitility)

@@ -2,6 +2,8 @@ package e2e
 
 import (
 	"context"
+	"testing"
+
 	"github.com/codeready-toolchain/toolchain-common/pkg/cluster"
 	"github.com/codeready-toolchain/toolchain-e2e/testsupport"
 	"github.com/codeready-toolchain/toolchain-e2e/wait"
@@ -10,7 +12,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/kubefed/pkg/apis/core/common"
 	"sigs.k8s.io/kubefed/pkg/apis/core/v1beta1"
-	"testing"
 )
 
 func TestKubeFedE2E(t *testing.T) {
@@ -48,11 +49,11 @@ func verifyKubeFedCluster(ctx *test.TestCtx, awaitility *wait.Awaitility, kubeFe
 
 		// then the KubeFedCluster should be ready
 		require.NoError(t, err)
-		err = singleAwait.WaitForKubeFedClusterConditionWithName(fedCluster.Name, wait.ReadyKubeFedCluster)
+		_, err = singleAwait.WaitForKubeFedClusterConditionWithName(fedCluster.Name, wait.ReadyKubeFedCluster)
 		require.NoError(t, err)
 		err = awaitility.WaitForReadyKubeFedClusters()
 		require.NoError(t, err)
-		err = singleAwait.WaitForKubeFedClusterConditionWithName(current.Name, wait.ReadyKubeFedCluster)
+		_, err = singleAwait.WaitForKubeFedClusterConditionWithName(current.Name, wait.ReadyKubeFedCluster)
 		require.NoError(t, err)
 	})
 	awaitility.T.Run("create new KubeFedCluster with incorrect data and expect to be offline for cluster type "+string(kubeFedClusterType), func(t *testing.T) {
@@ -72,7 +73,7 @@ func verifyKubeFedCluster(ctx *test.TestCtx, awaitility *wait.Awaitility, kubeFe
 
 		// then the KubeFedCluster should be offline
 		require.NoError(t, err)
-		err = singleAwait.WaitForKubeFedClusterConditionWithName(fedCluster.Name, &v1beta1.ClusterCondition{
+		_, err = singleAwait.WaitForKubeFedClusterConditionWithName(fedCluster.Name, &v1beta1.ClusterCondition{
 			Type:   common.ClusterOffline,
 			Status: corev1.ConditionTrue,
 		})

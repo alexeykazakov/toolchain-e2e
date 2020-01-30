@@ -53,7 +53,7 @@ type Awaitility struct {
 // SingleAwaitility contains information necessary for verifying availability of resources in a single operator
 type SingleAwaitility interface {
 	WaitForKubeFedCluster(clusterType cluster.Type, condition *v1beta1.ClusterCondition) error
-	WaitForKubeFedClusterConditionWithName(name string, condition *v1beta1.ClusterCondition) error
+	WaitForKubeFedClusterConditionWithName(name string, condition *v1beta1.ClusterCondition) (*v1beta1.KubeFedCluster, error)
 	GetKubeFedCluster(clusterType cluster.Type, condition *v1beta1.ClusterCondition) (v1beta1.KubeFedCluster, bool, error)
 	NewKubeFedCluster(name string, options ...ClusterOption) *v1beta1.KubeFedCluster
 }
@@ -92,6 +92,12 @@ func (a *Awaitility) Host() *HostAwaitility {
 var ReadyKubeFedCluster = &v1beta1.ClusterCondition{
 	Type:   common.ClusterReady,
 	Status: v1.ConditionTrue,
+}
+
+// NotReadyKubeFedCluster is a ClusterCondition that represents cluster that is not ready
+var NotReadyKubeFedCluster = &v1beta1.ClusterCondition{
+	Type:   common.ClusterReady,
+	Status: v1.ConditionFalse,
 }
 
 // WaitForReadyKubeFedClusters waits until both KubeFedClusters (host and member) exist and has ready ClusterCondition
@@ -140,13 +146,14 @@ func (a *SingleAwaitilityImpl) WaitForKubeFedCluster(clusterType cluster.Type, c
 
 // WaitForKubeFedClusterConditionWithName waits until there is a KubeFedCluster with the given name
 // and with the given ClusterCondition (if it the condition is nil, then it skips this check)
-func (a *SingleAwaitilityImpl) WaitForKubeFedClusterConditionWithName(name string, condition *v1beta1.ClusterCondition) error {
+func (a *SingleAwaitilityImpl) WaitForKubeFedClusterConditionWithName(name string, condition *v1beta1.ClusterCondition) (*v1beta1.KubeFedCluster, error) {
 	timeout := a.Timeout
+	var cluster *v1beta1.KubeFedCluster
 	if condition != nil {
 		timeout = KubeFedClusterConditionTimeout
 	}
-	return wait.Poll(a.RetryInterval, timeout, func() (done bool, err error) {
-		cluster := &v1beta1.KubeFedCluster{}
+	err := wait.Poll(a.RetryInterval, timeout, func() (done bool, err error) {
+		cluster = &v1beta1.KubeFedCluster{}
 		if err := a.Client.Get(context.TODO(), types.NamespacedName{Namespace: a.Ns, Name: name}, cluster); err != nil {
 			return false, err
 		}
@@ -157,6 +164,7 @@ func (a *SingleAwaitilityImpl) WaitForKubeFedClusterConditionWithName(name strin
 		a.T.Logf("waiting for %s KubeFedCluster having the expected condition (expected: %+v vs actual: %+v)", name, condition, cluster.Status.Conditions)
 		return false, err
 	})
+	return cluster, err
 }
 
 // GetKubeFedCluster retrieves and returns a KubeFedCluster representing a operator of the given type
